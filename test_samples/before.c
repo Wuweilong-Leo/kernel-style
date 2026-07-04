@@ -80,3 +80,27 @@ void cleanup(void){
         int badly_indented(void){
             return 0;
         }
+
+// CamelCase identifiers - must be converted to snake_case
+int processData(int bufferSize, char *dataBuffer){
+    int bytesRemaining = bufferSize;
+    int isFirstRun = 1;
+    struct nodeInfo *currentNode = NULL;
+
+    if (isFirstRun) {
+        currentNode = getActiveNode();
+        bytesRemaining = currentNode->dataLength;
+    }
+
+    return bytesRemaining;
+}
+
+// PascalCase struct name (should NOT be changed - type names controlled by typedef)
+struct DeviceConfig {
+    int maxRetryCount;
+    char *devicePath;
+};
+
+// ALL_CAPS macros should NOT be changed
+#define MAX_BUFFER_SIZE 1024
+#define DEFAULT_TIMEOUT 5000

@@ -441,6 +441,77 @@ def fix_multiple_blank_lines(lines: List[str]) -> List[str]:
     return result
 
 
+def _camel_to_snake(name: str) -> str:
+    """将 lowerCamelCase 转换为 snake_case。
+
+    myVariable  → my_variable
+    getData     → get_data
+    isReady     → is_ready
+    xmlParser   → xml_parser
+    """
+    # 在小写字母与大写字母之间插入下划线
+    s = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
+    # 在连续大写字母与后面的大写+小写之间插入下划线（如 XMLParser → XML_Parser）
+    s = re.sub(r'([A-Z]+)([A-Z][a-z])', r'\1_\2', s)
+    return s.lower()
+
+
+def fix_camel_case(lines: List[str]) -> List[str]:
+    """将 CamelCase 标识符转换为 snake_case。
+
+    Linux 内核风格：所有标识符使用 snake_case，禁止 CamelCase。
+    此修复器在整个文件范围内做一致性替换。
+
+    检测规则：
+      - lowerCamelCase（小写开头+中间有大写）→ 转换
+      - 全大写（宏/常量 GFP_KERNEL）→ 不改
+      - PascalCase（大写开头 MyStruct）→ 不改（由 typedef 控制）
+      - 双下划线前缀（__init）→ 不改
+      - 内核 API（printk 等）→ 不是 CamelCase，不触发
+    """
+    # 排除列表：这些标识符虽然是 CamelCase 形式但不应修改
+    _EXCLUDE = frozenset({
+        # 常见内核 API / 宏中看似 CamelCase 但实际不改的
+    })
+
+    # Step 1: 扫描整个文件，收集所有 code 片段中的 CamelCase 标识符
+    camel_re = re.compile(r'\b([a-z][a-z0-9]*[A-Z][a-zA-Z0-9]*)\b')
+    replacements = {}  # camel → snake
+
+    for line in lines:
+        parts = _split_line_safe(line)
+        code_text = "".join(p[1] for p in parts if p[0] == "code")
+        for m in camel_re.finditer(code_text):
+            name = m.group(1)
+            if name in _EXCLUDE:
+                continue
+            if name not in replacements:
+                snake = _camel_to_snake(name)
+                if snake != name:  # 确认确实有变化
+                    replacements[name] = snake
+
+    if not replacements:
+        return lines
+
+    # Step 2: 按长度降序排列替换（避免短名先匹配导致长名被截断替换）
+    sorted_items = sorted(replacements.items(), key=lambda x: len(x[0]), reverse=True)
+
+    # Step 3: 逐行替换（只替换 code 部分，保护字符串和注释）
+    result = []
+    for line in lines:
+        parts = _split_line_safe(line)
+        new_parts = []
+        for ptype, ptext in parts:
+            if ptype == "code":
+                for camel, snake in sorted_items:
+                    # 使用 \b 边界确保完整单词替换
+                    ptext = re.sub(r'\b' + re.escape(camel) + r'\b', snake, ptext)
+            new_parts.append((ptype, ptext))
+        result.append(_rejoin(new_parts))
+
+    return result
+
+
 # ============================================================
 # 第 2 轮：跨行修复
 # ============================================================
@@ -764,6 +835,7 @@ def apply_fixes(content: str) -> str:
     lines = fix_pointer_style(lines)
     lines = fix_comma_spacing(lines)
     lines = fix_brace_spacing(lines)
+    lines = fix_camel_case(lines)
     lines = fix_cpp_comments(lines)
     lines = fix_multiple_blank_lines(lines)
 
